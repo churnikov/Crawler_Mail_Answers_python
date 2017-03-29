@@ -2,6 +2,8 @@
 Class to crawl answers mail.ru
 """
 import sqlite3
+import requests
+
 from bs4 import BeautifulSoup as bs
 
 class Crawler(object):
@@ -45,7 +47,23 @@ class Crawler(object):
         self.db.commit()
 
     def close_db(self):
+        """Closes connection to database"""
         if hasattr(self, 'db'):
             self.db.close()
 
-    
+    def get_page(self, params=None):
+        """
+        Gets page with url self.__mail_page + params.
+        params usually would be ['questions', question_id]
+
+        :returns: string of page or None if 404 or something
+        """
+        if params:
+            url = self.__mail_page +  '/'.join(params) + '/'
+        else:
+            url = self.__mail_page
+        r = requests.get(url)
+        if r.status_code == 200:
+            return r.text
+        else:
+            return None

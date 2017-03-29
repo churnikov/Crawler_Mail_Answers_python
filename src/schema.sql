@@ -17,11 +17,13 @@ CREATE TABLE IF NOT EXISTS answers(
 CREATE TABLE IF NOT EXISTS categories(
   `id` INTEGER PRIMARY KEY AUTOINCREMENT,
   `name` TEXT NOT NULL
+  `web_name` TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sub_categories(
   `id` INTEGER PRIMARY KEY AUTOINCREMENT,
   `parent_cat_id` INTEGER,
   `name` TEXT NOT NULL,
+  `web_name` TEXT NOT NULL
   FOREIGN KEY(`parent_cat_id`) REFERENCES categories(`id`)
 );

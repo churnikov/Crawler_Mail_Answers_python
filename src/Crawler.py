@@ -2,10 +2,12 @@
 Class to crawl answers mail.ru
 """
 import sqlite3
+from bs4 import BeautifulSoup as bs
 
 class Crawler(object):
 
-    def __init__(self, categories='all', timeline = 'all', verbose=True):
+    def __init__(self, categories='all', timeline = 'all', verbose=True,
+                 schema_name='schema.sql', db_name='q_database.sqlt'):
         """
         init method for Crawler
         :params:
@@ -14,33 +16,36 @@ class Crawler(object):
             timeline   -- (tuple of timestamp)-- download from timeline[0] to timeline[1]
                        -- default val:'all'   -- downloads all questions
             verbose    -- (bool)              -- if program should output progress
+            schema_name-- (str)               -- name of sql file that describes
+                                                 structure of database
+                       -- default val:'schema.sql'
+            db_name    -- (str)               -- name of database
+                       -- default val:'q_database.sqlt'
         """
         self.categories = categories
         self.timeline = timeline
         self.verbose = verbose
+        self.schema_name = schema_name
+        self.db_name = db_name
+
         self.__mail_page = 'https://touch.otvet.mail.ru/'
 
-    def connect_db(self, schema_name='schema.sql', db_name='q_database.sqlt'):
-        """
-        connects to db of creates one with name in 'db_name' from 'schema.sql'
-        :params:
-            schema_name -- (str) -- name of schema file
-                        -- default: schema.sql
-            db_name     -- (str) --
-        """
-        try:
-            self.db_name = db_name
-            self.db = sqlite3.connect(db_name)
-
+    def get_db(self):
+        """Returns database if exist or creates one and returns it"""
+        if not hasattr(self, 'db'):
+            self.db = sqlite3.connect(self.db_name)
             self.db.row_factory = sqlite3.Row
-        except:
-            print('Unable to connect to database')
-            return False
-        return True
+        return self.db
 
-    def __init_db(self, schema_name, db_name):
-        """
-        type in .sql file CREATE IF TABLE `NOT EXISTS`
-        if table `exists`, this won't overwrite table
-        """
-        
+    def init_db(self):
+        """Initilizes database with sql file"""
+        get_db()
+        with open(self.schema_name, 'r') as f:
+            self.db.executescript(f.read())
+        self.db.commit()
+
+    def close_db(self):
+        if hasattr(self, 'db'):
+            self.db.close()
+
+    

@@ -37,7 +37,8 @@ class Crawler(object):
         self.db_name = db_name
         self.bs_features=bs_features
 
-        self.__mail_page = 'https://otvet.mail.ru/'
+        self.__mail_page = 'https://otvet.mail.ru'
+        self.__exclude = ['Золотой фонд', 'О проектах Mail.Ru', 'Другое']
 
     def get_db(self):
         """Returns database if exist or creates one and returns it"""
@@ -66,7 +67,7 @@ class Crawler(object):
         :returns: string of page or None if 404 or something
         """
         if params:
-            url = self.__mail_page +  '/'.join(params) + '/'
+            url = self.__mail_page +  ''.join(params)
         else:
             url = self.__mail_page
         r = requests.get(url)
@@ -80,14 +81,14 @@ class Crawler(object):
         try:
             c = self.db.cursor()
             for item in items:
-                item_for_db = ','.join(item)
+                item_for_db = ', '.join(item)
                 print(item_for_db)
                 c.execute('INSERT INTO {t} VALUES({i})'.format(t=table, i=item_for_db))
             self.db.commit()
         except:
             raise sqlite3.Error('Unable to insert items into {}'.format(table))
 
-    def get_categories(self, add_to_db=True):
+    def get_categories(self, page=None):
         """
         Downloads parent categories
         :param: add_to_db -- (bool) -- if True will connect to database and add them
@@ -96,20 +97,74 @@ class Crawler(object):
                             name_of_link: /example/
         """
         # getting main page
-        text_page = self.get_page()
+        text_page = self.get_page(page)
         soup = bs(text_page, self.bs_features)
         # searching for categories
         categories = soup.find_all('a', 'medium item item_link')
-        # transforming into list of tuples
-        # tuple := (name, web_name)
-        if self.categories != 'all':
-            cats_to_db = [(str(i), '\''+cat.text+'\'', '\''+cat['href']+'\'')
-                          for i, cat in enumerate(categories)
-                          if cat.text in self.categories]
-        else:
-            cats_to_db = [(str(i), '\''+cat.text+'\'', '\''+cat['href']+'\'')
-                          for i, cat in enumerate(categories)]
+        # adding categories to db and return list
+        return categories
 
         if add_to_db:
-            self.add_to_database(table='categories', items=cats_to_db)
-        return cats_to_db
+            self.add_to_database(table=table, items=cats_to_db)
+
+    def __get_cats2sql(self, cats):
+        """Stupid (dog) fuction to prepare data for sql"""
+        if self.categories != 'all':
+            return [(str(j),                    #id; autoincrement
+                     '\'' + itm.text + '\'',    #name
+                     '\'' + itm['href'] + '\'') #link
+                     for j, itm in enumerate(cats)
+                         if itm.text in self.categories
+                            and itm.text not in self.__exclude]
+        else:
+            return [(str(j),                    #id; autoincrement
+                     '\'' + itm.text + '\'',    #name
+                     '\'' + itm['href'] + '\'') #link
+                     for j, itm in enumerate(cats)
+                        if itm.text not in self.__exclude]
+
+    def __get_subcats2sql(self, cats, i, parent_name, start_id):
+        """Stupid (dog) fuction to prepare data for sql
+           i -- id of parent category
+        """
+        if self.categories != 'all':
+            return [(str(start_id + j),         #id; autoincrement
+                     str(i),                    #parent_id
+                     '\'' + itm.text + '\'',    #name
+                     '\'' + itm['href'] + '\'') #link
+                     for j, itm in enumerate(cats)
+                        if itm.text in self.categories
+                            and itm.text not in self.__exclude
+                            and parent_name not in self.__exclude
+                            and itm.text not in self.parent_cats]
+        else:
+            return [(str(start_id + j),         #id; autoincrement
+                     str(i),                    #parent_id
+                     '\'' + itm.text + '\'',    #name
+                     '\'' + itm['href'] + '\'') #link
+                     for j, itm in enumerate(cats)
+                        if itm.text not in self.__exclude
+                        and parent_name not in self.__exclude
+                        and itm.text not in self.parent_cats]
+
+    def add_to_db_categories(self):
+        """
+        Downloads categories and saves them to database
+        """
+        categories = self.get_categories()
+#       itm looks like this: <a class="medium item item_link" href="/autosport/" name="">Автоспорт</a>,
+#       so we are getting text = Автоспорт and 'href' = /autosport/
+        cats2sql = self.__get_cats2sql(categories)
+        self.add_to_database(table='categories', items=cats2sql)
+        self.parent_cats = [cat.text for cat in categories]
+
+        sub2sql = []
+        j = 0
+        for i, c in enumerate(categories):
+            par_name = c.text
+            href = c['href']
+            sub_categories = self.get_categories(page=href)
+            sub2sql.extend(self.__get_subcats2sql(sub_categories, i, par_name, j))
+            j += len(sub_categories)
+        self.add_to_database(table='sub_categories',
+                            items=sub2sql)

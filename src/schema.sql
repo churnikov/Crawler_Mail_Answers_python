@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS questions(
 CREATE TABLE IF NOT EXISTS answers(
   `id` INTEGER PRIMARY KEY,
   `question_id` INTEGER NOT NULL,
+  `a_text` TEXT,
   FOREIGN KEY(`question_id`) REFERENCES questions(`id`)
 );
 

@@ -42,6 +42,74 @@ class Crawler(object):
         self.__exclude = ['Золотой фонд', 'О проектах Mail.Ru', 'Другое']
         self.__reg_q_number = re.compile('[\d]+')
 
+    def __get_cats2sql(self, cats):
+        """Stupid (dog) fuction to prepare data for sql"""
+        if self.categories != 'all':
+            return [(str(j),                    #id; autoincrement
+                     '\'' + itm.text + '\'',    #name
+                     '\'' + itm['href'] + '\'') #link
+                     for j, itm in enumerate(cats)
+                         if itm.text in self.categories
+                            and itm.text not in self.__exclude]
+        else:
+            return [(str(j),                    #id; autoincrement
+                     '\'' + itm.text + '\'',    #name
+                     '\'' + itm['href'] + '\'') #link
+                     for j, itm in enumerate(cats)
+                        if itm.text not in self.__exclude]
+
+    def __get_subcats2sql(self, cats, i, parent_name, start_id):
+        """Stupid (dog) fuction to prepare data for sql
+           i -- id of parent category
+        """
+        if self.categories != 'all':
+            return [(str(start_id + j),         #id; autoincrement
+                     str(i),                    #parent_id
+                     '\'' + itm.text + '\'',    #name
+                     '\'' + itm['href'] + '\'') #link
+                     for j, itm in enumerate(cats)
+                        if itm.text in self.categories
+                            and itm.text not in self.__exclude
+                            and parent_name not in self.__exclude
+                            and itm.text not in self.parent_cats]
+        else:
+            return [(str(start_id + j),         #id; autoincrement
+                     str(i),                    #parent_id
+                     '\'' + itm.text + '\'',    #name
+                     '\'' + itm['href'] + '\'') #link
+                     for j, itm in enumerate(cats)
+                        if itm.text not in self.__exclude
+                        and parent_name not in self.__exclude
+                        and itm.text not in self.parent_cats]
+
+    def __fetch_latest_question_id(self):
+        """
+        Loads main page of `otvet.mail.ru` and gets `id` of latest question.
+        Then sets it to `self.latest_question` and returns this values
+        """
+        page = self.get_page(params=['/open/'])
+        soup = bs(page, self.bs_features)
+
+        latest_q = soup.find('a', 'blue item__text')
+        self.latest_question = self.__reg_q_number.search(latest_q['href']).group(0)
+        return self.latest_question
+
+    def __is_valid_page(self, soup):
+        """Checks if page contains 'Вопрос не найден' """
+
+        # TODO: add time constrains
+
+        content = soup.find('div', 'b-page__content')
+        if content:
+            if content.text == 'Вопрос не найден..':
+                return False
+        else:
+            category = soup.find('a', 'black list__title list__title').text.strip()
+            if category not in self.__exclude:
+                if self.categories == 'all' or category in self.categories:
+                    return True
+            return False
+
     def get_db(self):
         """Returns database if exist or creates one and returns it"""
         if not hasattr(self, 'db'):
@@ -93,10 +161,10 @@ class Crawler(object):
     def get_categories(self, page=None):
         """
         Downloads parent categories
-        :param: add_to_db -- (bool) -- if True will connect to database and add them
-                          -- default val:True
-        :returns: (list) -- list of tuples with (category_name, name of link)
-                            name_of_link: /example/
+        :param: page     -- (list) -- should be either ['/name_of_categry/'] to get subcategories
+                                      or None to get parent categories
+                         -- default val:None
+        :returns: (list) -- list of <a>...</a> with names of categories and links to them
         """
         # getting main page
         text_page = self.get_page(page)
@@ -106,56 +174,13 @@ class Crawler(object):
         # adding categories to db and return list
         return categories
 
-        if add_to_db:
-            self.add_to_database(table=table, items=cats_to_db)
-
-    def __get_cats2sql(self, cats):
-        """Stupid (dog) fuction to prepare data for sql"""
-        if self.categories != 'all':
-            return [(str(j),                    #id; autoincrement
-                     '\'' + itm.text + '\'',    #name
-                     '\'' + itm['href'] + '\'') #link
-                     for j, itm in enumerate(cats)
-                         if itm.text in self.categories
-                            and itm.text not in self.__exclude]
-        else:
-            return [(str(j),                    #id; autoincrement
-                     '\'' + itm.text + '\'',    #name
-                     '\'' + itm['href'] + '\'') #link
-                     for j, itm in enumerate(cats)
-                        if itm.text not in self.__exclude]
-
-    def __get_subcats2sql(self, cats, i, parent_name, start_id):
-        """Stupid (dog) fuction to prepare data for sql
-           i -- id of parent category
+    def add_categories_to_db(self):
         """
-        if self.categories != 'all':
-            return [(str(start_id + j),         #id; autoincrement
-                     str(i),                    #parent_id
-                     '\'' + itm.text + '\'',    #name
-                     '\'' + itm['href'] + '\'') #link
-                     for j, itm in enumerate(cats)
-                        if itm.text in self.categories
-                            and itm.text not in self.__exclude
-                            and parent_name not in self.__exclude
-                            and itm.text not in self.parent_cats]
-        else:
-            return [(str(start_id + j),         #id; autoincrement
-                     str(i),                    #parent_id
-                     '\'' + itm.text + '\'',    #name
-                     '\'' + itm['href'] + '\'') #link
-                     for j, itm in enumerate(cats)
-                        if itm.text not in self.__exclude
-                        and parent_name not in self.__exclude
-                        and itm.text not in self.parent_cats]
-
-    def add_to_db_categories(self):
-        """
-        Downloads categories and saves them to database
+        Downloads categories and subcategories and saves them to database
         """
         categories = self.get_categories()
-#       itm looks like this: <a class="medium item item_link" href="/autosport/" name="">Автоспорт</a>,
-#       so we are getting text = Автоспорт and 'href' = /autosport/
+        # itm looks like this: <a class="medium item item_link" href="/autosport/" name="">Автоспорт</a>,
+        # so we are getting text = Автоспорт and 'href' = /autosport/
         cats2sql = self.__get_cats2sql(categories)
         self.add_to_database(table='categories', items=cats2sql)
         self.parent_cats = [cat.text for cat in categories]
@@ -169,19 +194,7 @@ class Crawler(object):
             sub2sql.extend(self.__get_subcats2sql(sub_categories, i, par_name, j))
             j += len(sub_categories)
         self.add_to_database(table='sub_categories',
-                            items=sub2sql)
-
-    def __fetch_latest_question_id(self):
-        """
-        Loads main page of `otvet.mail.ru` and gets `id` of latest question.
-        Then sets it to `self.latest_question` and returns this values
-        """
-        page = self.get_page(params=['/open/'])
-        soup = bs(page, self.bs_features)
-
-        latest_q = soup.find('a', 'blue item__text')
-        self.latest_question = self.__reg_q_number.search(latest_q['href']).group(0)
-        return self.latest_question
+                                items=sub2sql)
 
     def get_latest_question_id(self):
         """Gets latest_question from database. If there is None, fetch one from web."""
@@ -195,3 +208,21 @@ class Crawler(object):
             return latest_q[0]
         else:
             return self.__fetch_latest_question_id()
+
+    def fetch_pages(self, from_id, to_id):
+        """
+        Genrator for pages. Yields soup object only if page exists and valid.
+        :params:
+            from_id -- (int) -- Number of question to start from
+            to_id   -- (int) -- Number of last question
+        :yields:
+            (page_id, BeautifulSoup object) tuple
+        """
+        for p_id in range(from_id, to_id):
+            page = self.get_page(['/question/', '{p}/'.format(p_id)])
+            # if error 404, get_page returns None
+            if page:
+                # Checking if page contains "Вопрос не найден"
+                soup = bs(page, self.bs_features)
+                if self.__is_valid_page(soup):
+                    yield(p_id, soup)

@@ -226,3 +226,33 @@ class Crawler(object):
                 soup = bs(page, self.bs_features)
                 if self.__is_valid_page(soup):
                     yield(p_id, soup)
+
+    def retrieve_data(self, soup_page):
+        """
+        Gets tuples of relevant data from BeautifulSoup parsed page
+        :params:
+            soup_page -- (str) -- BeautifulSoup parsed page
+        :returns:
+            tuple of title, category_id, sub_category_id, comment_from_author, answers
+        """
+        title = soup_page.find('h1', 'q--qtext').text
+
+        category = soup_page.find('a', 'black list__title list__title').text
+        c = self.db.cursor()
+        query = c.execute('SELECT `id` FROM categories \
+                            WHERE `name` LIKE \'{}\''.format(category))
+        category_id = query.fetchone()[0]
+
+        raw_comments = soup_page.find_all('div', 'q--qcomment medium')
+        if raw_comments:
+            comments = ' '.join([q.text for q in raw_comments])
+        else:
+            comments = None
+
+        raw_answers = soup_page.find_all('div', 'a--atext atext')
+        if raw_answers:
+            answers = [a.text for a in raw_answers]
+        else:
+            answers = None
+        # TODO: return actual sub_category_id, not None
+        return title, category_id, None, comments, answers

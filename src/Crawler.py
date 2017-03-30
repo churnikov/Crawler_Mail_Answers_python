@@ -110,6 +110,27 @@ class Crawler(object):
                     return True
             return False
 
+    def __select_id_from(self, table, like):
+        like_s = like.strip()
+        c = self.db.cursor()
+        query = c.execute('SELECT `id` FROM {} \
+                            WHERE `name` LIKE \'{}\''.format(table, like_s))
+        category_id = query.fetchone()[0]
+        self.db.commit()
+        return category_id
+
+    def __get_selected_category_and_sub(self, soup):
+        category = soup.find('a', 'black list__title list__title')
+        sub_category = soup.find('a', 'medium item item_link selected')
+
+        cat_id = self.__select_id_from('categories', category.text)
+        if sub_category:
+            sub_cat_id = self.__select_id_from('sub_categories', sub_category.text)
+        else:
+            sub_cat_id = None
+
+        return cat_id, sub_cat_id
+
     def get_db(self):
         """Returns database if exist or creates one and returns it"""
         if not hasattr(self, 'db'):
@@ -219,7 +240,7 @@ class Crawler(object):
             (page_id, BeautifulSoup object) tuple
         """
         for p_id in range(from_id, to_id):
-            page = self.get_page(['/question/', '{p}/'.format(p_id)])
+            page = self.get_page(['/question/', '{}/'.format(p_id)])
             # if error 404, get_page returns None
             if page:
                 # Checking if page contains "Вопрос не найден"
@@ -237,11 +258,7 @@ class Crawler(object):
         """
         title = soup_page.find('h1', 'q--qtext').text
 
-        category = soup_page.find('a', 'black list__title list__title').text
-        c = self.db.cursor()
-        query = c.execute('SELECT `id` FROM categories \
-                            WHERE `name` LIKE \'{}\''.format(category))
-        category_id = query.fetchone()[0]
+        cat_id, sub_cat_id = self.__get_selected_category_and_sub(soup_page)
 
         raw_comments = soup_page.find_all('div', 'q--qcomment medium')
         if raw_comments:
@@ -254,5 +271,16 @@ class Crawler(object):
             answers = [a.text for a in raw_answers]
         else:
             answers = None
-        # TODO: return actual sub_category_id, not None
-        return title, category_id, None, comments, answers
+        return title, cat_id, sub_cat_id, comments, answers
+
+    def download_all_questions(self):
+
+        for i, page in self.fetch_pages(0, 10):
+            title, cat_id, sub_cat_id, text, answers = self.retrieve_data(page)
+
+            c = self.db.cursor()
+            q_4_db = (str(i), str(cat_id), str(sub_cat_id), str(title), str(text))
+            c.execute('INSERT INTO questions VALUES(?, ?, ?, ?, ?)', q_4_db)
+            for a in answers:
+                a_4_db = (str(i), str(a))
+                c.execute('INSERT INTO answers(`question_id`, `a_text`) VALUES(?, ?)', a_4_db)

@@ -3,6 +3,7 @@ Class to crawl answers mail.ru
 """
 import sqlite3
 import requests
+import re
 
 from bs4 import BeautifulSoup as bs
 
@@ -39,6 +40,7 @@ class Crawler(object):
 
         self.__mail_page = 'https://otvet.mail.ru'
         self.__exclude = ['Золотой фонд', 'О проектах Mail.Ru', 'Другое']
+        self.__reg_q_number = re.compile('[\d]+')
 
     def get_db(self):
         """Returns database if exist or creates one and returns it"""
@@ -168,3 +170,28 @@ class Crawler(object):
             j += len(sub_categories)
         self.add_to_database(table='sub_categories',
                             items=sub2sql)
+
+    def __fetch_latest_question_id(self):
+        """
+        Loads main page of `otvet.mail.ru` and gets `id` of latest question.
+        Then sets it to `self.latest_question` and returns this values
+        """
+        page = self.get_page(params=['/open/'])
+        soup = bs(page, self.bs_features)
+
+        latest_q = soup.find('a', 'blue item__text')
+        self.latest_question = self.__reg_q_number.search(latest_q['href']).group(0)
+        return self.latest_question
+
+    def get_latest_question_id(self):
+        """Gets latest_question from database. If there is None, fetch one from web."""
+        c = self.db.cursor()
+        resp = c.execute('SELECT max(`id`) FROM questions')
+        latest_q = resp.fetchone()
+        self.db.commit()
+
+        if latest_q:
+            self.latest_question = latest_q[0]
+            return latest_q[0]
+        else:
+            return self.__fetch_latest_question_id()

@@ -275,7 +275,7 @@ class Crawler(object):
         if raw_answers:
             answers = [a.text for a in raw_answers]
         else:
-            answers = None
+            answers = [None]
         return title, cat_id, sub_cat_id, comments, answers
 
     def download_all_questions(self):

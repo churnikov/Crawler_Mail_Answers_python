@@ -4,6 +4,7 @@ Class to crawl answers mail.ru
 import sqlite3
 import requests
 import re
+from utils import print_progress_bar
 
 from bs4 import BeautifulSoup as bs
 
@@ -92,7 +93,7 @@ class Crawler(object):
 
         latest_q = soup.find('a', 'blue item__text')
         self.latest_question = self.__reg_q_number.search(latest_q['href']).group(0)
-        return self.latest_question
+        return int(self.latest_question)
 
     def __is_valid_page(self, soup):
         """Checks if page contains 'Вопрос не найден' """
@@ -173,7 +174,8 @@ class Crawler(object):
             c = self.db.cursor()
             for item in items:
                 item_for_db = ', '.join(item)
-                print(item_for_db)
+                if self.verbose:
+                    print(item_for_db)
                 c.execute('INSERT INTO {t} VALUES({i})'.format(t=table, i=item_for_db))
             self.db.commit()
         except:
@@ -274,8 +276,13 @@ class Crawler(object):
         return title, cat_id, sub_cat_id, comments, answers
 
     def download_all_questions(self):
-
-        for i, page in self.fetch_pages(0, 10):
+        n_quests = self.get_latest_question_id()
+        if self.verbose:
+            print('Getting questions:')
+            print_progress_bar(0, n_quests)
+        for i, page in self.fetch_pages(0, n_quests):
+            if self.verbose:
+                print_progress_bar(i, n_quests)
             title, cat_id, sub_cat_id, text, answers = self.retrieve_data(page)
 
             c = self.db.cursor()

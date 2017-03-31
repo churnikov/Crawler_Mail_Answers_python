@@ -7,6 +7,7 @@ import re
 from utils import print_progress_bar
 
 from bs4 import BeautifulSoup as bs
+from multiprocessing import Pool
 
 class Crawler(object):
 
@@ -43,6 +44,7 @@ class Crawler(object):
         self.__exclude = ['Золотой фонд', 'О проектах Mail.Ru', 'Другое']
         self.__reg_q_number = re.compile('[\d]+')
         self.__reg_valid_page = re.compile('Вопрос не найден')
+        self.__pool = Pool(4)
 
     def __get_cats2sql(self, cats):
         """Stupid (dog) fuction to prepare data for sql"""
@@ -278,6 +280,21 @@ class Crawler(object):
             answers = [None]
         return title, cat_id, sub_cat_id, comments, answers
 
+    def __process_page(self, i_and_page):
+        i = i_and_page[0]
+        page = i_and_page[1]
+
+        title, cat_id, sub_cat_id, text, answers = self.retrieve_data(page)
+
+        c = self.db.cursor()
+        q_4_db = (str(i), str(cat_id), str(sub_cat_id), str(title), str(text))
+        c.execute('INSERT INTO questions VALUES(?, ?, ?, ?, ?)', q_4_db)
+        for a in answers:
+            a_4_db = (str(i), str(a))
+            c.execute('INSERT INTO answers(`question_id`, `a_text`) VALUES(?, ?)', a_4_db)
+
+        return i
+
     def download_all_questions(self):
         """
         Downloads latest questions
@@ -287,14 +304,7 @@ class Crawler(object):
         if self.verbose:
             print('Getting questions:')
             print_progress_bar(first_quests, n_quests)
-        for i, page in self.fetch_pages(first_quests, n_quests):
+        for i in self.__pool.starmap(self.__process_page,
+                                      self.fetch_pages(first_quests, n_quests)):
             if self.verbose:
                 print_progress_bar(i, n_quests)
-            title, cat_id, sub_cat_id, text, answers = self.retrieve_data(page)
-
-            c = self.db.cursor()
-            q_4_db = (str(i), str(cat_id), str(sub_cat_id), str(title), str(text))
-            c.execute('INSERT INTO questions VALUES(?, ?, ?, ?, ?)', q_4_db)
-            for a in answers:
-                a_4_db = (str(i), str(a))
-                c.execute('INSERT INTO answers(`question_id`, `a_text`) VALUES(?, ?)', a_4_db)

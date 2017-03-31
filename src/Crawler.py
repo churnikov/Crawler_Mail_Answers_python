@@ -223,12 +223,12 @@ class Crawler(object):
         """Gets latest_question from database. If there is None, fetch one from web."""
         c = self.db.cursor()
         resp = c.execute('SELECT max(`id`) FROM questions')
-        latest_q = resp.fetchone()
+        latest_q = resp.fetchone()[0]
         self.db.commit()
 
         if latest_q:
-            self.latest_question = latest_q[0]
-            return latest_q[0]
+            self.latest_question = latest_q
+            return latest_q
         else:
             return self.__fetch_latest_question_id()
 

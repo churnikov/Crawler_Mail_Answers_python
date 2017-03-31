@@ -84,18 +84,6 @@ class Crawler(object):
                         and parent_name not in self.__exclude
                         and itm.text not in self.parent_cats]
 
-    def __fetch_latest_question_id(self):
-        """
-        Loads main page of `otvet.mail.ru` and gets `id` of latest question.
-        Then sets it to `self.latest_question` and returns this values
-        """
-        page = self.get_page(params=['/open/'])
-        soup = bs(page, self.bs_features)
-
-        latest_q = soup.find('a', 'blue item__text')
-        self.latest_question = self.__reg_q_number.search(latest_q['href']).group(0)
-        return int(self.latest_question)
-
     def __is_valid_page(self, soup):
         """Checks if page contains 'Вопрос не найден' """
 
@@ -132,6 +120,18 @@ class Crawler(object):
             sub_cat_id = None
 
         return cat_id, sub_cat_id
+
+    def fetch_latest_question_id(self):
+        """
+        Loads main page of `otvet.mail.ru` and gets `id` of latest question.
+        Then sets it to `self.latest_question` and returns this values
+        """
+        page = self.get_page(params=['/open/'])
+        soup = bs(page, self.bs_features)
+
+        latest_q = soup.find('a', 'blue item__text')
+        self.latest_question = self.__reg_q_number.search(latest_q['href']).group(0)
+        return int(self.latest_question)
 
     def get_db(self):
         """Returns database if exist or creates one and returns it"""
@@ -220,7 +220,7 @@ class Crawler(object):
         self.add_to_database(table='sub_categories',
                                 items=sub2sql)
 
-    def get_latest_question_id(self):
+    def get_latest_question_id_from_db(self):
         """Gets latest_question from database. If there is None, fetch one from web."""
         c = self.db.cursor()
         resp = c.execute('SELECT max(`id`) FROM questions')
@@ -231,7 +231,7 @@ class Crawler(object):
             self.latest_question = latest_q
             return latest_q
         else:
-            return self.__fetch_latest_question_id()
+            return 0
 
     def fetch_pages(self, from_id, to_id):
         """
@@ -277,11 +277,15 @@ class Crawler(object):
         return title, cat_id, sub_cat_id, comments, answers
 
     def download_all_questions(self):
-        n_quests = self.get_latest_question_id()
+        """
+        Downloads latest questions
+        """
+        n_quests = self.fetch_latest_question_id() + 1
+        first_quests = self.get_latest_question_id_from_db()
         if self.verbose:
             print('Getting questions:')
-            print_progress_bar(0, n_quests)
-        for i, page in self.fetch_pages(0, n_quests):
+            print_progress_bar(first_quests, n_quests)
+        for i, page in self.fetch_pages(first_quests, n_quests):
             if self.verbose:
                 print_progress_bar(i, n_quests)
             title, cat_id, sub_cat_id, text, answers = self.retrieve_data(page)

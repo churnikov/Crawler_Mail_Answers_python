@@ -94,10 +94,12 @@ class Crawler(object):
             if self.__reg_valid_page.search(content.text):
                 return False
         else:
-            category = soup.find('a', 'black list__title list__title').text.strip()
-            if category not in self.__exclude:
-                if self.categories == 'all' or category in self.categories:
-                    return True
+            category_raw = soup.find('a', 'black list__title list__title')
+            if category_raw:
+                category = category_raw.text.strip()
+                if category not in self.__exclude:
+                    if self.categories == 'all' or category in self.categories:
+                        return True
             return False
 
     def __select_id_from(self, table, like):

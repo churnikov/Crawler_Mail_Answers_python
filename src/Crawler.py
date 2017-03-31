@@ -42,6 +42,7 @@ class Crawler(object):
         self.__mail_page = 'https://otvet.mail.ru'
         self.__exclude = ['Золотой фонд', 'О проектах Mail.Ru', 'Другое']
         self.__reg_q_number = re.compile('[\d]+')
+        self.__reg_valid_page = re.compile('Вопрос не найден')
 
     def __get_cats2sql(self, cats):
         """Stupid (dog) fuction to prepare data for sql"""
@@ -102,7 +103,7 @@ class Crawler(object):
 
         content = soup.find('div', 'b-page__content')
         if content:
-            if content.text == 'Вопрос не найден..':
+            if self.__reg_valid_page.search(content.text):
                 return False
         else:
             category = soup.find('a', 'black list__title list__title').text.strip()

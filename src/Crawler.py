@@ -2,19 +2,21 @@
 Class to crawl answers mail.ru
 """
 import sqlite3
-import psycopg2
-import requests
 import re
 import time
-
-from utils import print_progress_bar
-from bs4 import BeautifulSoup as bs
 from multiprocessing import Pool
+
+import requests
+import psycopg2
+from bs4 import BeautifulSoup as bs
+
+from CONFIG import *
+from utils import print_progress_bar
 
 class Crawler(object):
 
     def __init__(self, categories='all', timeline = 'all', verbose=True,
-                 schema_name='schema.sql', db_name='q_database.sqlt',
+                 schema_name='schema.sql', db_name='qa_mailru', db_type='sqlite',
                  bs_features='lxml'):
         """
         init method for Crawler
@@ -28,7 +30,9 @@ class Crawler(object):
                                                  structure of database
                        -- default val:'schema.sql'
             db_name    -- (str)               -- name of database
-                       -- default val:'q_database.sqlt'
+                       -- default val:'qa_mailru'
+            db_type    -- (str)               -- type of database. Currently supported: sqlite ('sqlite') or postgesql ('psql')
+                       -- default val:'psql'
             bs_features-- (str)               -- BeautifulSoup engine to parse html page
                           Look up https://www.crummy.com/software/BeautifulSoup/bs4/doc/ *Installing parser* section
                           It explains things about parsers
@@ -40,6 +44,7 @@ class Crawler(object):
         self.verbose = verbose
         self.schema_name = schema_name
         self.db_name = db_name
+        self.db_type = db_type
         self.bs_features=bs_features
 
         self.__mail_page = 'https://otvet.mail.ru'
@@ -109,8 +114,8 @@ class Crawler(object):
     def __select_id_from(self, table, like):
         like_s = like.strip()
         c = self.db.cursor()
-        query = c.execute('SELECT `id` FROM {} \
-                            WHERE `name` LIKE \'{}\''.format(table, like_s))
+        query = c.execute('SELECT id FROM {} \
+                            WHERE name LIKE \'{}\''.format(table, like_s))
         category_id = query.fetchone()[0]
         self.db.commit()
         return category_id
@@ -142,15 +147,33 @@ class Crawler(object):
     def get_db(self):
         """Returns database if exist or creates one and returns it"""
         if not hasattr(self, 'db'):
-            self.db = sqlite3.connect(self.db_name)
-            self.db.row_factory = sqlite3.Row
+            if self.db_type == 'sqlite':
+                self.db = sqlite3.connect(self.db_name)
+                self.db.row_factory = sqlite3.Row
+            elif self.db_type == 'psql':
+                self.db = psycopg2.connect(dbname=self.db_name,
+                                           user=PS_USER_NAME,
+                                           password=PS_PASSWORD,
+                                           port=PS_PORT,
+                                           host=PS_HOST)
+            else:
+                raise ConnectionError('DB type {} is not supported'.format(self.db_type))
         return self.db
 
     def init_db(self):
         """Initilizes database with sql file"""
         self.get_db()
         with open(self.schema_name, 'r') as f:
-            self.db.executescript(f.read())
+            if self.db_type == 'psql':
+                c = self.db.cursor()
+                queries = f.read().split(';')
+                for q in queries:
+                    if q:
+                        c.execute(q + ';')
+            elif self.db_type == 'sqlite':
+                self.db.executescript(f.read())
+            else:
+                raise ConnectionError()
         self.db.commit()
 
     def close_db(self):
@@ -180,17 +203,17 @@ class Crawler(object):
             print('Unable to load {} page, waiting one minute'.format(params))
             time.sleep(60)
             return self.get_page(params)
-             
+
 
     def add_to_database(self, table, items):
         """Add tuples from *items* to *table*"""
         try:
             c = self.db.cursor()
-            for item in items:
-                item_for_db = ', '.join(item)
-                if self.verbose:
-                    print(item_for_db)
-                c.execute('INSERT INTO {t} VALUES({i})'.format(t=table, i=item_for_db))
+            item_for_db = '?, ' * len(items)-1
+            item_for_db = item_for_db + '?'
+            c.execute('INSERT INTO {t} VALUES({i})'.format(t=table, i=item_for_db), items)
+            if self.verbose:
+                print(items)
             self.db.commit()
         except:
             raise sqlite3.Error('Unable to insert items into {}'.format(table))
@@ -236,7 +259,7 @@ class Crawler(object):
     def get_latest_question_id_from_db(self):
         """Gets latest_question from database. If there is None, fetch one from web."""
         c = self.db.cursor()
-        resp = c.execute('SELECT max(`id`) FROM questions')
+        resp = c.execute('SELECT max(id) FROM questions')
         latest_q = resp.fetchone()[0]
         self.db.commit()
 
@@ -300,7 +323,7 @@ class Crawler(object):
         c.execute('INSERT INTO questions VALUES(?, ?, ?, ?, ?)', q_4_db)
         for a in answers:
             a_4_db = (str(i), str(a))
-            c.execute('INSERT INTO answers(`question_id`, `a_text`) VALUES(?, ?)', a_4_db)
+            c.execute('INSERT INTO answers(question_id, a_text) VALUES(?, ?)', a_4_db)
 
         return i
 

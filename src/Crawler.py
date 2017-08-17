@@ -2,10 +2,12 @@
 Class to crawl answers mail.ru
 """
 import sqlite3
+import psycopg2
 import requests
 import re
-from utils import print_progress_bar
+import time
 
+from utils import print_progress_bar
 from bs4 import BeautifulSoup as bs
 from multiprocessing import Pool
 
@@ -163,15 +165,22 @@ class Crawler(object):
 
         :returns: string of page or None if 404 or something
         """
-        if params:
-            url = self.__mail_page +  ''.join(params)
-        else:
-            url = self.__mail_page
-        r = requests.get(url)
-        if r.status_code == 200:
-            return r.text
-        else:
-            return None
+        try:
+            if params:
+                url = self.__mail_page +  ''.join(params)
+            else:
+                url = self.__mail_page
+            r = requests.get(url)
+            if r.status_code == 200:
+                return r.text
+            else:
+                return None
+        except requests.exceptions.ConnectionError as e:
+            print(e)
+            print('Unable to load {} page, waiting one minute'.format(params))
+            time.sleep(60)
+            return self.get_page(params)
+             
 
     def add_to_database(self, table, items):
         """Add tuples from *items* to *table*"""
@@ -299,12 +308,12 @@ class Crawler(object):
         """
         Downloads latest questions
         """
-        n_quests = self.fetch_latest_question_id() + 1
-        first_quests = self.get_latest_question_id_from_db()
+        n_quests = self.fetch_latest_question_id()
+        first_quests = self.get_latest_question_id_from_db() + 3
         if self.verbose:
             print('Getting questions:')
             print_progress_bar(first_quests, n_quests)
-        for i in self.__pool.starmap(self.__process_page,
-                                      self.fetch_pages(first_quests, n_quests)):
+        for i_and_page in self.fetch_pages(first_quests, n_quests):
+            i = self.__process_page(i_and_page)
             if self.verbose:
-                print_progress_bar(i, n_quests)
+                print_progress_bar(i, n_quests, suffix='{} of {}'.format(i, n_quests))

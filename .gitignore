@@ -8,3 +8,4 @@ data/pickles
 Untitled.ipynb
 src/.ipynb_checkpoints
 *.sqlt
+venv/
